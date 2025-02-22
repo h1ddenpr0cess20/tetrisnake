@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Play Tetrisnake - a unique blend of Tetris and Snake!">
+  <title>Tetrisnake</title>
+  <style>
+    :root {
+      --cell-size: 30px;
+      --grid-width: 20;
+      --grid-height: 30;
+      --hud-height: 100px;
+      --color-bg: #111;
+      --color-text: #eee;
+      --color-canvas-bg: #000;
+      --color-snake: lime;
+      --color-block: orange;
+      --color-food: red;
+      --color-grid: #444;
+      --color-button: #28a745;
+      --color-button-hover: #218838;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    #gameContainer {
+      position: relative;
+      width: calc(var(--cell-size) * var(--grid-width));
+      max-width: 100%;
+      margin: 0 auto;
+    }
+
+    canvas {
+      background: var(--color-canvas-bg);
+      display: block;
+      width: 100%;
+      height: calc(var(--cell-size) * var(--grid-height) + var(--hud-height));
+    }
+
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      color: var(--color-text);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+      transition: opacity 0.3s ease;
+      opacity: 1;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 18px;
+      margin: 10px 0;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: var(--color-button);
+      color: var(--color-text);
+      transition: background 0.2s ease;
+    }
+
+    button:hover, button:focus {
+      background: var(--color-button-hover);
+      outline: none;
+    }
+
+    button:focus {
+      box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.5);
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      font-size: clamp(2rem, 5vw, 3rem);
+      text-shadow: 2px 2px 5px #000;
+    }
+
+    p {
+      font-size: clamp(1rem, 3vw, 1.25rem);
+      margin: 8px 0;
+      text-align: center;
+      max-width: 80%;
+    }
+
+    @media (max-width: 600px) {
+      :root {
+        --cell-size: 20px;
+      }
+      body {
+        padding: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer" role="main">
+    <div id="mainMenu" class="overlay" aria-label="Main Menu">
+      <h1>Tetrisnake</h1>
+      <p>Control the falling snake with arrow keys.</p>
+      <p>Eat food to grow and clear lines like Tetris.</p>
+      <p>Avoid walls, blocks, and yourself!</p>
+      <button id="startButton">Start Game</button>
+    </div>
+    <div id="pausedOverlay" class="overlay hidden" aria-label="Paused">
+      <h1>Paused</h1>
+      <p>Press 'P' to resume</p>
+      <p>Press 'Q' to quit to main menu</p>
+    </div>
+    <div id="gameOverOverlay" class="overlay hidden" aria-label="Game Over">
+      <h1>Game Over</h1>
+      <p id="finalScore" aria-live="polite"></p>
+      <p id="finalLevel" aria-live="polite"></p>
+      <button id="restartButton">Restart Game</button>
+    </div>
+    <canvas id="gameCanvas" aria-label="Tetrisnake Game Canvas"></canvas>
+  </div>
+
+  <script type="module">
+    // Configuration
+    const config = {
+      CELL_SIZE: 30,
+      GRID_WIDTH: 20,
+      GRID_HEIGHT: 30,
+      HUD_HEIGHT: 100,
+      COLORS: {
+        SNAKE: "lime",
+        BLOCK: "orange",
+        FOOD: "red",
+        GRID: "#444"
+      },
+      SPEEDS: {
+        MOVE_DELAY: 300,      // Original base speed
+        FAST_MOVE_DELAY: 50,  // Original fast speed
+        HOLD_SCALE: 500
+      }
+    };
+
+    // Game State
+    class Game {
+      constructor() {
+        this.staticBlocks = new Map();
+        this.snakeBody = [];
+        this.snakeDir = { x: 0, y: 1 };
+        this.food = { x: 0, y: 0 };
+        this.score = 0;
+        this.level = 1;
+        this.landedBlocks = 0;
+        this.gameOver = false;
+        this.paused = false;
+        this.activeDirectionKey = null;
+        this.keyHoldStart = 0;
+        this.lastMoveTime = 0;
+        this.accumulator = 0;
+
+        // DOM Elements
+        this.canvas = document.getElementById("gameCanvas");
+        this.ctx = this.canvas.getContext("2d");
+        this.overlays = {
+          mainMenu: document.getElementById("mainMenu"),
+          paused: document.getElementById("pausedOverlay"),
+          gameOver: document.getElementById("gameOverOverlay"),
+          finalScore: document.getElementById("finalScore"),
+          finalLevel: document.getElementById("finalLevel")
+        };
+      }
+
+      init() {
+        this.resizeCanvas();
+        this.reset();
+        this.bindEvents();
+      }
+
+      resizeCanvas() {
+        const scale = window.innerWidth < 600 ? 20 : config.CELL_SIZE;
+        this.canvas.width = scale * config.GRID_WIDTH;
+        this.canvas.height = scale * config.GRID_HEIGHT + config.HUD_HEIGHT;
+        this.cellSize = scale;
+      }
+
+      reset() {
+        this.staticBlocks.clear();
+        this.score = 0;
+        this.level = 1;
+        this.landedBlocks = 0;
+        this.spawnSnake();
+        this.spawnFood();
+        this.gameOver = false;
+        this.paused = false;
+      }
+
+      spawnSnake() {
+        this.snakeBody = [];
+        const startX = Math.floor(config.GRID_WIDTH / 2);
+        const initialLen = Math.floor(Math.random() * Math.min(4, Math.floor(config.GRID_WIDTH / 2))) + 1;
+        for (let i = 0; i < initialLen; i++) {
+          this.snakeBody.push({ x: startX - i, y: 0 });
+        }
+        this.snakeDir = { x: 0, y: 1 };
+      }
+
+      spawnFood() {
+        do {
+          this.food = {
+            x: Math.floor(Math.random() * config.GRID_WIDTH),
+            y: Math.floor(Math.random() * config.GRID_HEIGHT)
+          };
+        } while (
+          this.isStaticBlock(this.food.x, this.food.y) ||
+          this.snakeBody.some(seg => seg.x === this.food.x && seg.y === this.food.y)
+        );
+      }
+
+      isStaticBlock(x, y) {
+        return this.staticBlocks.has(`${x},${y}`);
+      }
+
+      moveSnake() {
+        const head = this.snakeBody[0];
+        const newHead = { x: head.x + this.snakeDir.x, y: head.y + this.snakeDir.y };
+
+        if (
+          newHead.x < 0 || newHead.x >= config.GRID_WIDTH ||
+          newHead.y < 0 || newHead.y >= config.GRID_HEIGHT ||
+          this.isStaticBlock(newHead.x, newHead.y) ||
+          this.snakeBody.some((seg, i) => seg.x === newHead.x && seg.y === newHead.y && i !== this.snakeBody.length - 1)
+        ) {
+          return false;
+        }
+
+        const isEating = newHead.x === this.food.x && newHead.y === this.food.y;
+        this.snakeBody.unshift(newHead);
+        
+        if (isEating) {
+          this.score += this.level * 10;
+          this.spawnFood();
+        } else {
+          this.snakeBody.pop();
+        }
+        return true;
+      }
+
+      lockSnake() {
+        for (const seg of this.snakeBody) {
+          this.staticBlocks.set(`${seg.x},${seg.y}`, config.COLORS.BLOCK);
+          this.landedBlocks++;
+        }
+      }
+
+      clearLines() {
+        let linesCleared = 0;
+        for (let y = config.GRID_HEIGHT - 1; y >= 0; y--) {
+          if (this.isLineFull(y)) {
+            linesCleared++;
+            this.removeLine(y);
+            y++; // Check the same line again after shifting
+          }
+        }
+        if (linesCleared > 0) {
+          this.score += linesCleared * 50 * this.level;
+        }
+      }
+
+      isLineFull(y) {
+        for (let x = 0; x < config.GRID_WIDTH; x++) {
+          if (!this.isStaticBlock(x, y)) return false;
+        }
+        return true;
+      }
+
+      removeLine(y) {
+        for (let x = 0; x < config.GRID_WIDTH; x++) {
+          this.staticBlocks.delete(`${x},${y}`);
+        }
+        const newStatic = new Map();
+        for (const [pos, col] of this.staticBlocks) {
+          const [px, py] = pos.split(",").map(Number);
+          newStatic.set(`${px},${py < y ? py + 1 : py}`, col);
+        }
+        this.staticBlocks = newStatic;
+      }
+
+      computeDelay() {
+        const extraSegments = this.snakeBody.length - 1;
+        const baseDelay = Math.max(
+          config.SPEEDS.FAST_MOVE_DELAY, // Minimum delay 50ms
+          config.SPEEDS.MOVE_DELAY - (this.level - 1) * 18 - extraSegments * 15 // Faster scaling
+        );
+        if (this.activeDirectionKey && this.keyHoldStart) {
+          const holdTime = performance.now() - this.keyHoldStart;
+          const factor = Math.min(holdTime / config.SPEEDS.HOLD_SCALE, 1);
+          return baseDelay - (baseDelay - config.SPEEDS.FAST_MOVE_DELAY) * factor;
+        }
+        return baseDelay;
+      }
+
+      update(timestamp) {
+        if (!this.lastMoveTime) this.lastMoveTime = timestamp;
+        const delta = timestamp - this.lastMoveTime;
+        this.lastMoveTime = timestamp;
+
+        if (!this.paused && !this.gameOver) {
+          this.accumulator += delta;
+          const delay = this.computeDelay();
+          while (this.accumulator >= delay) {
+            this.accumulator -= delay;
+            if (!this.moveSnake()) {
+              this.lockSnake();
+              this.clearLines();
+              this.level = 1 + Math.floor(this.landedBlocks / 50);
+              this.spawnSnake();
+              if (this.snakeBody.some(seg => this.isStaticBlock(seg.x, seg.y))) {
+                this.endGame();
+                break;
+              }
+            }
+          }
+        }
+        this.render();
+        requestAnimationFrame(timestamp => this.update(timestamp));
+      }
+
+      render() {
+        const { ctx, cellSize } = this;
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Grid
+        ctx.strokeStyle = config.COLORS.GRID;
+        for (let x = 0; x <= config.GRID_WIDTH; x++) {
+          ctx.beginPath();
+          ctx.moveTo(x * cellSize, 0);
+          ctx.lineTo(x * cellSize, config.GRID_HEIGHT * cellSize);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= config.GRID_HEIGHT; y++) {
+          ctx.beginPath();
+          ctx.moveTo(0, y * cellSize);
+          ctx.lineTo(config.GRID_WIDTH * cellSize, y * cellSize);
+          ctx.stroke();
+        }
+
+        // Static Blocks
+        for (const [pos, color] of this.staticBlocks) {
+          const [x, y] = pos.split(",").map(Number);
+          this.drawCell(x, y, color);
+        }
+
+        // Snake
+        for (const seg of this.snakeBody) {
+          this.drawCell(seg.x, seg.y, config.COLORS.SNAKE);
+        }
+
+        // Food
+        this.drawCell(this.food.x, this.food.y, config.COLORS.FOOD);
+
+        // HUD
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, config.GRID_HEIGHT * cellSize, this.canvas.width, config.HUD_HEIGHT);
+        ctx.fillStyle = "#fff";
+        ctx.font = `${cellSize * 0.8}px sans-serif`;
+        ctx.fillText(`Score: ${this.score}`, 10, config.GRID_HEIGHT * cellSize + cellSize * 0.9);
+        ctx.fillText(`Level: ${this.level}`, 10, config.GRID_HEIGHT * cellSize + cellSize * 1.8);
+      }
+
+      drawCell(x, y, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x * this.cellSize, y * this.cellSize, this.cellSize, this.cellSize);
+      }
+
+      endGame() {
+        this.gameOver = true;
+        this.overlays.finalScore.textContent = `Final Score: ${this.score}`;
+        this.overlays.finalLevel.textContent = `Level Reached: ${this.level}`;
+        this.overlays.gameOver.classList.remove("hidden");
+      }
+
+      quitToMainMenu() {
+        this.paused = false;
+        this.gameOver = false;
+        this.overlays.paused.classList.add("hidden");
+        this.overlays.mainMenu.classList.remove("hidden");
+        this.reset();
+      }
+
+      bindEvents() {
+        document.getElementById("startButton").addEventListener("click", () => {
+          this.overlays.mainMenu.classList.add("hidden");
+          this.reset();
+          this.lastMoveTime = performance.now();
+          requestAnimationFrame(timestamp => this.update(timestamp));
+        });
+
+        document.getElementById("restartButton").addEventListener("click", () => {
+          this.overlays.gameOver.classList.add("hidden");
+          this.reset();
+        });
+
+        document.addEventListener("keydown", e => {
+          if (this.gameOver) return;
+
+          if (e.key === "p" || e.key === "P") {
+            this.paused = !this.paused;
+            this.overlays.paused.classList.toggle("hidden", !this.paused);
+            return;
+          }
+
+          if (this.paused) {
+            if (e.key === "q" || e.key === "Q") {
+              this.quitToMainMenu();
+            }
+            return;
+          }
+
+          const directions = {
+            "ArrowUp": { x: 0, y: -1 },
+            "ArrowDown": { x: 0, y: 1 },
+            "ArrowLeft": { x: -1, y: 0 },
+            "ArrowRight": { x: 1, y: 0 }
+          };
+
+          if (directions[e.key]) {
+            const newDir = directions[e.key];
+            if (newDir.x !== -this.snakeDir.x || newDir.y !== -this.snakeDir.y) {
+              this.snakeDir = newDir;
+            }
+            if (this.activeDirectionKey !== e.key) {
+              this.activeDirectionKey = e.key;
+              this.keyHoldStart = performance.now();
+            }
+          }
+        });
+
+        document.addEventListener("keyup", e => {
+          if (e.key === this.activeDirectionKey) {
+            this.activeDirectionKey = null;
+            this.keyHoldStart = 0;
+          }
+        });
+
+        window.addEventListener("resize", () => this.resizeCanvas());
+      }
+    }
+
+    // Initialize Game
+    const game = new Game();
+    game.init();
+  </script>
+</body>
+</html>
