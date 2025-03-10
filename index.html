@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Play Tetrisnake - a unique blend of Tetris and Snake!">
+  <title>Tetrisnake</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="gameContainer" role="main">
+    <div id="mainMenu" class="overlay" aria-label="Main Menu">
+      <h1>Tetrisnake</h1>
+      <p>Control the falling snake with arrow keys.</p>
+      <p>Eat food to grow and clear lines like Tetris.</p>
+      <p>Avoid walls, blocks, and yourself!</p>
+      <button id="startButton">Start Game</button>
+      <div class="audio-controls">
+        <button id="toggleSound">Sound: On</button>
+        <button id="toggleMusic">Music: On</button>
+      </div>
+    </div>
+    <div id="pausedOverlay" class="overlay hidden" aria-label="Paused">
+      <h1>Paused</h1>
+      <p>Press 'P' to resume</p>
+      <p>Press 'Q' to quit to main menu</p>
+      <div class="audio-controls">
+        <button id="toggleSoundPaused">Sound: On</button>
+        <button id="toggleMusicPaused">Music: On</button>
+      </div>
+    </div>
+    <div id="gameOverOverlay" class="overlay hidden" aria-label="Game Over">
+      <h1>Game Over</h1>
+      <p id="finalScore" aria-live="polite"></p>
+      <p id="finalLevel" aria-live="polite"></p>
+      <button id="restartButton">Restart Game</button>
+    </div>
+    <canvas id="gameCanvas" aria-label="Tetrisnake Game Canvas"></canvas>
+  </div>
+
+  <!-- Scripts loaded in dependency order:
+       1. Configuration and foundational classes
+       2. UI and input handling components
+       3. Core game logic
+       4. Main initialization -->
+  <script src="js/config.js"></script>
+  <script src="js/AudioManager.js"></script>
+  <script src="js/Snake.js"></script>
+  <script src="js/Grid.js"></script>
+  <script src="js/Renderer.js"></script>
+  <script src="js/UI.js"></script>
+  <script src="js/InputHandler.js"></script>
+  <script src="js/Game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html> 
