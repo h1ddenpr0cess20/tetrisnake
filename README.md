@@ -1,6 +1,6 @@
 # Tetrisnake
 
-Tetrisnake, a sarcastic response to Elon Musk's AI game mashup ideas, was initially conceived as a Pygame application using Grok 3. This blend of Tetris and Snake mechanics was later transformed into a web application with the assistance of ChatGPT o3-mini-high, and subsequently refined using various LLMs within Cursor, primarily with claude-3.7-sonnet-thinking.
+Tetrisnake is a blend of Tetris and Snake mechanics, created as a sarcastic response to Elon Musk's AI game mashup ideas. The game was initially developed as a Pygame application with assistance from ChatGPT o3-mini-high and Grok 3. It was later converted to a web application and refined using the same AI tools. Final polishing was done using various LLMs in Cursor, primarily with claude-3.7-sonnet-thinking.
 
 ## Description
 
