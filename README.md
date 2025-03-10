@@ -14,8 +14,7 @@ Tetrisnake combines elements from both classic games:
 ## How to Play
 
 ### Controls
-- **Arrow Keys**: Move the snake left, right, up or down
-- **Down Arrow** (hold): Speed up snake descent
+- **Arrow Keys**: Move the snake left, right, up or down (holding any arrow key accelerates movement)
 - **P**: Pause the game
 - **Q**: When paused, quit to main menu
 
