@@ -5,7 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Play Tetrisnake - a unique blend of Tetris and Snake!">
   <title>Tetrisnake</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
+  <!-- 
+    Note: The green snake color is enforced through:
+    1. config.js COLORS.SNAKE setting 
+    2. CSS variables in styles.css
+    3. Renderer.js color patterns
+  -->
 </head>
 <body>
   <div id="gameContainer" role="main">
@@ -22,8 +31,11 @@
     </div>
     <div id="pausedOverlay" class="overlay hidden" aria-label="Paused">
       <h1>Paused</h1>
-      <p>Press 'P' to resume</p>
-      <p>Press 'Q' to quit to main menu</p>
+      <p>Game paused. Use buttons or keyboard shortcuts:</p>
+      <div class="menu-buttons">
+        <button id="resumeButton">Resume Game (P)</button>
+        <button id="quitButton">Quit to Menu (Q)</button>
+      </div>
       <div class="audio-controls">
         <button id="toggleSoundPaused">Sound: On</button>
         <button id="toggleMusicPaused">Music: On</button>

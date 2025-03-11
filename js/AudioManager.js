@@ -19,7 +19,23 @@ class AudioManager {
     this.bgMusicPaused = false;         // Whether music is paused
     this.soundEffectsGain = null;       // Volume control for sound effects
     this.musicTrack = 'main';           // Current music track ('main', 'intense')
+    this.currentMusicLevel = null;      // Current music level
     this.init();
+    
+    // Add a simple document-wide click event to resume audio context
+    // This addresses the most common browser issue that causes audio to stop
+    document.addEventListener('click', () => {
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().then(() => {
+          console.log('AudioContext resumed on user interaction');
+          
+          // If music should be playing but isn't, restart it
+          if (this.bgMusicPlaying && !this.bgMusicSource && !this.isMusicMuted) {
+            this.startBackgroundMusic(this.currentMusicLevel || 1);
+          }
+        });
+      }
+    });
   }
 
   /**
@@ -97,14 +113,8 @@ class AudioManager {
     // Food eaten sound - subtle single note
     this.sounds.eat = this.createToneBuffer(330, 0.02, 'sine', 380, 0.08);
     
-    // Line clear sound - ascending notes fanfare
-    this.sounds.lineClear = this.createComplexTone([
-      { freq: 440, type: 'sine', duration: 0.2, attack: 0.01, release: 0.1 },
-      { freq: 554, type: 'sine', duration: 0.2, attack: 0.01, release: 0.1, delay: 0.03 },
-      { freq: 659, type: 'sine', duration: 0.2, attack: 0.01, release: 0.1, delay: 0.06 },
-      { freq: 880, type: 'sine', duration: 0.25, attack: 0.01, release: 0.15, delay: 0.09 },
-      { freq: 1100, type: 'sine', duration: 0.3, attack: 0.02, release: 0.2, delay: 0.12 }
-    ]);
+    // Rattlesnake sound for line clear - rapid clicking/shaking effects
+    this.sounds.lineClear = this.createRattlesnakeSound();
     
     // Game over sound - descending tones
     this.sounds.gameOver = this.createComplexTone([
@@ -118,6 +128,95 @@ class AudioManager {
       { freq: 120, type: 'square', duration: 0.08, attack: 0.005, release: 0.04 },
       { freq: 80, type: 'triangle', duration: 0.12, attack: 0.005, release: 0.05, delay: 0.01 }
     ], true);
+  }
+
+  /**
+   * Creates a softer, gentler rattlesnake-inspired sound effect with increased volume
+   * @returns {AudioBuffer} The gentle rattling sound buffer
+   */
+  createRattlesnakeSound() {
+    if (!this.audioContext) return null;
+    
+    // Use a longer duration for a more gentle sound
+    const duration = 0.8; // Shorter duration for more impact
+    const sampleRate = this.audioContext.sampleRate;
+    const bufferSize = duration * sampleRate;
+    const buffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
+    const leftChannel = buffer.getChannelData(0);
+    const rightChannel = buffer.getChannelData(1);
+    
+    // Use a middle-range frequency - not too harsh but more noticeable
+    const rattleFrequency = 35;
+    // Slightly more clicks for better audibility
+    const clicksPerShake = 3; 
+    
+    // Create a gentle but audible rattling effect
+    for (let i = 0; i < bufferSize; i++) {
+      const t = i / sampleRate;
+      
+      // Create smoother envelope with shorter fade in/out for more presence
+      let envelope = 1;
+      if (t < 0.1) {
+        envelope = t / 0.1; // Quick fade in
+      } else if (t > duration - 0.2) {
+        envelope = (duration - t) / 0.2; // Fade out
+      }
+      
+      // Generate audible clicks at moderate rattling frequency
+      const rattlePhase = (t * rattleFrequency) % 1.0;
+      
+      // Stronger clicks with gentle transition
+      let clickValue = 0;
+      for (let click = 0; click < clicksPerShake; click++) {
+        const clickTime = click / clicksPerShake;
+        // Moderate window for smooth but present transitions
+        const distanceFromClick = Math.abs(rattlePhase - clickTime);
+        if (distanceFromClick < 0.05) {
+          // Use a sine fade for smoothness
+          const fade = Math.sin((1 - distanceFromClick / 0.05) * Math.PI/2);
+          // Increased amplitude for better audibility (0.6 vs 0.4)
+          clickValue = (Math.random() * 2 - 1) * 0.6 * fade;
+        }
+      }
+      
+      // Add light noise for texture
+      const noise = (Math.random() * 2 - 1) * 0.08;
+      
+      // Combine the rattling clicks with noise - increased volume by 40%
+      // Multiplying by 1.0 instead of 0.7 (was reduced before)
+      const signal = (clickValue + noise) * envelope;
+      
+      // Add subtle stereo effect
+      const stereoPan = Math.sin(t * 4) * 0.15;
+      leftChannel[i] = signal * (1 - stereoPan);
+      rightChannel[i] = signal * (1 + stereoPan);
+    }
+    
+    // Apply a gentler low-pass filter to keep more audible frequencies
+    const tempBuffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
+    const tempLeft = tempBuffer.getChannelData(0);
+    const tempRight = tempBuffer.getChannelData(1);
+    
+    // Copy our initial data to the temp buffer
+    for (let i = 0; i < bufferSize; i++) {
+      tempLeft[i] = leftChannel[i];
+      tempRight[i] = rightChannel[i];
+    }
+    
+    // Gentler filter to preserve more audible frequencies
+    const filterStrength = 0.5; // Lower value = less filtering (was 0.8)
+    let lastL = 0, lastR = 0;
+    
+    for (let i = 0; i < bufferSize; i++) {
+      // Simple one-pole low-pass filter
+      lastL = lastL * filterStrength + tempLeft[i] * (1 - filterStrength);
+      lastR = lastR * filterStrength + tempRight[i] * (1 - filterStrength);
+      
+      leftChannel[i] = lastL;
+      rightChannel[i] = lastR;
+    }
+    
+    return buffer;
   }
 
   createComplexTone(tones, applyFilter = false) {
@@ -206,136 +305,108 @@ class AudioManager {
   }
 
   createBackgroundMusic() {
-    // Create main theme music
-    this.sounds.bgMusicMain = this.createMusicTrack('main');
-    
-    // Create intense theme (faster version for higher levels)
-    this.sounds.bgMusicIntense = this.createMusicTrack('intense');
-    
-    // Default to main theme
-    this.sounds.bgMusic = this.sounds.bgMusicMain;
+    // Create the base music track that we'll adjust speed on
+    this.sounds.bgMusic = this.createDynamicMusic();
   }
 
-  createMusicTrack(type) {
+  createDynamicMusic() {
     if (!this.audioContext) return null;
     
     // Set up consistent timing for 4/4 time signature
-    // Each "beat" will be 0.25 seconds (quarter note)
-    const quarterNote = 0.25;
+    // Slow down the tempo by increasing the note duration
+    const quarterNote = 0.4; // Slower tempo (was 0.3)
     const eighthNote = quarterNote / 2;
+    const sixteenthNote = eighthNote / 2;
     const halfNote = quarterNote * 2;
     const wholeNote = quarterNote * 4;
     
-    // Middle Eastern inspired patterns - toned down the high notes
-    // Using Hijaz Kar scale (D, Eb, F#, G, A, Bb, C#, D) - with characteristic augmented 2nd intervals
+    // Add new patterns for variety - transposed down an octave
     const patterns = {
-      // Each pattern is exactly 4 beats (one measure in 4/4 time)
-      pattern1: [
+      mainTheme: [
+        { note: 'E4', duration: eighthNote }, // Lowered from E5
+        { note: 'D4', duration: eighthNote }, // Lowered from D5
+        { note: 'C4', duration: eighthNote }, // Lowered from C5
+        { note: 'D4', duration: eighthNote }, // Lowered from D5
+        { note: 'E4', duration: eighthNote }, // Lowered from E5
+        { note: 'E4', duration: eighthNote }, // Lowered from E5
+        { note: 'E4', duration: quarterNote }, // Lowered from E5
+      ],
+      
+      midEastern: [
+        { note: 'E4', duration: eighthNote }, // Lowered from E5
+        { note: 'F4', duration: eighthNote }, // Lowered from F5
+        { note: 'D4', duration: eighthNote }, // Lowered from D5
+        { note: 'D4', duration: eighthNote }, // Lowered from D5
+        { note: 'C4', duration: halfNote }, // Lowered from C5
+      ],
+      
+      tetris: [
+        { note: 'E3', duration: quarterNote }, // Lowered from E4
+        { note: 'B3', duration: quarterNote }, // Lowered from B4
+        { note: 'C4', duration: quarterNote }, // Lowered from C5
+        { note: 'D4', duration: quarterNote }, // Lowered from D5
+      ],
+      
+      bridge: [
+        { note: 'A3', duration: quarterNote }, // Lowered from A4
+        { note: 'G3', duration: quarterNote }, // Lowered from G4
+        { note: 'F3', duration: quarterNote }, // Lowered from F4
+        { note: 'G3', duration: quarterNote }, // Lowered from G4
+      ],
+      
+      // New pattern for variety - also lowered
+      newPattern: [
+        { note: 'G4', duration: eighthNote }, // Lowered from G5
+        { note: 'A4', duration: eighthNote }, // Lowered from A5
+        { note: 'B4', duration: eighthNote }, // Lowered from B5
+        { note: 'A4', duration: eighthNote }, // Lowered from A5
+        { note: 'G4', duration: eighthNote }, // Lowered from G5
+        { note: 'F4', duration: eighthNote }, // Lowered from F5
+        { note: 'E4', duration: quarterNote }, // Lowered from E5
+      ],
+      
+      // Add a deeper bass-focused pattern
+      bassPattern: [
+        { note: 'G2', duration: quarterNote },
         { note: 'D3', duration: quarterNote },
-        { note: 'F#3', duration: quarterNote },
-        { note: 'G3', duration: quarterNote },
-        { note: 'Bb3', duration: quarterNote }
-      ],
-      
-      pattern2: [
-        { note: 'D3', duration: quarterNote }, // Lowered from D4
-        { note: 'C#3', duration: quarterNote }, // Lowered from C#4
-        { note: 'Bb3', duration: quarterNote },
-        { note: 'G3', duration: quarterNote }
-      ],
-      
-      pattern3: [
-        { note: 'G3', duration: eighthNote },
-        { note: 'A3', duration: eighthNote },
-        { note: 'Bb3', duration: quarterNote },
-        { note: 'A3', duration: quarterNote },
-        { note: 'G3', duration: halfNote }
-      ],
-      
-      pattern4: [
-        { note: 'Eb3', duration: quarterNote },
-        { note: 'F#3', duration: quarterNote },
-        { note: 'G3', duration: halfNote }
-      ],
-      
-      // Simplified ornamental patterns with fewer high pitches
-      pattern5: [
-        { note: 'D3', duration: eighthNote }, // Lowered from D4
-        { note: 'Eb3', duration: eighthNote }, // Lowered from Eb4
-        { note: 'D3', duration: eighthNote }, // Lowered from D4
-        { note: 'C#3', duration: eighthNote }, // Lowered from C#4
-        { note: 'D3', duration: eighthNote }, // Lowered from D4
-        { note: 'Eb3', duration: eighthNote }, // Lowered from Eb4
-        { note: 'F#3', duration: quarterNote } // Lowered from F#4
-      ],
-      
-      pattern6: [
-        { note: 'A3', duration: eighthNote },
-        { note: 'Bb3', duration: eighthNote },
-        { note: 'A3', duration: eighthNote },
-        { note: 'G3', duration: eighthNote },
-        { note: 'F#3', duration: quarterNote },
-        { note: 'G3', duration: quarterNote }
+        { note: 'G2', duration: quarterNote },
+        { note: 'A2', duration: quarterNote },
       ]
     };
     
-    // Create a sequence that follows musical structure
-    let fullSequence = [];
-    
-    if (type === 'main') {
-      // Create a Middle Eastern inspired structure
-      fullSequence = [
-        // Introduction section
-        ...patterns.pattern1, ...patterns.pattern2, ...patterns.pattern1, ...patterns.pattern3,
-        
-        // Main theme with ornaments 
-        ...patterns.pattern5, ...patterns.pattern6, ...patterns.pattern5, ...patterns.pattern4,
-        
-        // Variation section
-        ...patterns.pattern2, ...patterns.pattern6, ...patterns.pattern1, ...patterns.pattern3,
-        
-        // Final section with more ornamentation
-        ...patterns.pattern5, ...patterns.pattern4, ...patterns.pattern6, ...patterns.pattern1
-      ];
-    } else if (type === 'intense') {
-      // Faster tempo for intense
-      const speedFactor = 0.8; // 20% faster
+    // Extend the sequence with new patterns
+    let fullSequence = [
+      ...patterns.mainTheme, ...patterns.mainTheme,
+      ...patterns.midEastern, ...patterns.midEastern,
+      ...patterns.tetris, ...patterns.tetris,
+      ...patterns.bridge, ...patterns.mainTheme,
       
-      // Create a more driving Middle Eastern inspired structure
-      const intenseParts = [
-        ...patterns.pattern5, ...patterns.pattern2, ...patterns.pattern6, ...patterns.pattern1,
-        ...patterns.pattern3, ...patterns.pattern5, ...patterns.pattern4, ...patterns.pattern2,
-        ...patterns.pattern6, ...patterns.pattern3, ...patterns.pattern5, ...patterns.pattern1
-      ];
-      
-      // Apply tempo adjustment
-      fullSequence = intenseParts.map(note => ({
-        ...note,
-        duration: note.duration * speedFactor
-      }));
-    }
+      // New section with the new pattern
+      ...patterns.newPattern, ...patterns.newPattern,
+      ...patterns.bassPattern, ...patterns.bassPattern,
+      ...patterns.mainTheme, ...patterns.midEastern,
+      ...patterns.tetris, ...patterns.bridge,
+      ...patterns.newPattern, ...patterns.bassPattern,
+    ];
     
-    // Extended note frequency map with Middle Eastern accidentals
+    // Extended note frequency map
     const noteFreq = {
-      // Low octave
+      // Lower octaves for deeper sounds
       'C2': 65.41, 'C#2': 69.30, 'Db2': 69.30, 'D2': 73.42, 'D#2': 77.78, 'Eb2': 77.78,
       'E2': 82.41, 'F2': 87.31, 'F#2': 92.50, 'Gb2': 92.50, 'G2': 98.00, 'G#2': 103.83,
       'Ab2': 103.83, 'A2': 110.00, 'A#2': 116.54, 'Bb2': 116.54, 'B2': 123.47,
-      
-      // Mid-low octave
       'C3': 130.81, 'C#3': 138.59, 'Db3': 138.59, 'D3': 146.83, 'D#3': 155.56, 'Eb3': 155.56,
       'E3': 164.81, 'F3': 174.61, 'F#3': 185.00, 'Gb3': 185.00, 'G3': 196.00, 'G#3': 207.65,
       'Ab3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'Bb3': 233.08, 'B3': 246.94,
-      
-      // Mid-high octave
       'C4': 261.63, 'C#4': 277.18, 'Db4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'Eb4': 311.13,
       'E4': 329.63, 'F4': 349.23, 'F#4': 369.99, 'Gb4': 369.99, 'G4': 392.00, 'G#4': 415.30,
       'Ab4': 415.30, 'A4': 440.00, 'A#4': 466.16, 'Bb4': 466.16, 'B4': 493.88,
-      
-      // High octave
       'C5': 523.25, 'C#5': 554.37, 'Db5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'Eb5': 622.25,
       'E5': 659.25, 'F5': 698.46, 'F#5': 739.99, 'Gb5': 739.99, 'G5': 783.99, 'G#5': 830.61,
-      'Ab5': 830.61, 'A5': 880.00, 'A#5': 932.33, 'Bb5': 932.33, 'B5': 987.77
+      'Ab5': 830.61, 'A5': 880.00, 'A#5': 932.33, 'Bb5': 932.33, 'B5': 987.77,
+      'C6': 1046.50, 'C#6': 1108.73, 'Db6': 1108.73, 'D6': 1174.66, 'D#6': 1244.51, 'Eb6': 1244.51,
+      'E6': 1318.51, 'F6': 1396.91, 'F#6': 1479.98, 'Gb6': 1479.98, 'G6': 1567.98, 'G#6': 1661.22,
+      'Ab6': 1661.22, 'A6': 1760.00, 'A#6': 1864.66, 'Bb6': 1864.66, 'B6': 1975.53
     };
     
     // Process each note in the melody
@@ -344,172 +415,118 @@ class AudioManager {
     let measureCount = 0;
     let beatInMeasure = 0;
     
-    // Add a drone note (common in Middle Eastern music)
-    const droneDuration = wholeNote * 4; // 4 measures
-    for (let m = 0; m < Math.ceil(fullSequence.length / 16); m++) { // 16 notes per 4 measures
-      sequence.push({
-        time: currentTime + (m * droneDuration),
-        freq: noteFreq['D2'], // Low drone on the tonic
-        duration: droneDuration * 0.95, // Slightly shorter to avoid clicks
-        type: 'drone',
-        gain: 0.06, // Decreased gain
-        group: 'drone'
-      });
-    }
-    
-    // Add stronger Middle Eastern inspired bassline
-    for (let m = 0; m < Math.ceil(fullSequence.length / 4); m++) {
-      // Middle Eastern rhythmic patterns - emphasizing D as the tonic
-      const bassPatterns = [
-        ['D2', 'A2', 'D2', 'G2', 'D2', 'A2', 'D2', 'A2'],
-        ['D2', 'D2', 'A2', 'G2', 'D2', 'A2', 'G2', 'D2'],
-        ['G2', 'D2', 'A2', 'G2', 'D2', 'G2', 'D2', 'A2'],
-        ['D2', 'A2', 'G2', 'F#2', 'G2', 'A2', 'D2', 'D2']
-      ];
-      
-      // Choose a pattern based on measure number
-      const patternIndex = m % 4;
-      const bassPattern = bassPatterns[patternIndex];
-      
-      // Add each bass note
-      for (let i = 0; i < 8; i++) { // 8 eighth notes per measure
+    // DEEP BASS - lower octave and more prominent
+    for (let m = 0; m < Math.ceil(fullSequence.length / 16); m++) {
+      // Use more low notes in the bassline
+      const bassPattern = ['G2', 'REST', 'G2', 'D3', 'G2', 'REST', 'A2', 'G2'];
+      for (let i = 0; i < 8; i++) {
         const bassNote = bassPattern[i];
-        if (noteFreq[bassNote]) {
+        if (bassNote !== 'REST' && noteFreq[bassNote]) {
           sequence.push({
             time: currentTime + (i * eighthNote) + (m * 4 * quarterNote),
             freq: noteFreq[bassNote],
-            duration: eighthNote * 0.8, // Longer for a stronger bassline
-            type: 'triangle',
-            gain: 0.14, // Increased gain for stronger bass
+            duration: eighthNote * 0.9,
+            type: 'synth',
+            gain: 0.2, // Increased gain for more bass presence
             group: 'bass'
           });
         }
       }
     }
     
-    // Add melody and enhanced Middle Eastern percussion
+    // First process the melody to get the total duration
+    let melodyDuration = 0;
+    fullSequence.forEach(item => {
+      melodyDuration += item.duration;
+    });
+    
+    // Calculate total number of beats needed to cover the entire track
+    const totalBeats = Math.ceil(melodyDuration / quarterNote);
+    
+    // Add lead synth melody and track the actual duration
     fullSequence.forEach((item, index) => {
-      // Track our position in musical time
       beatInMeasure += item.duration / quarterNote;
       if (beatInMeasure >= 4) {
         measureCount++;
         beatInMeasure = beatInMeasure % 4;
       }
-      
-      // Add melody note with slight vibrato for Middle Eastern character
-      sequence.push({
-        time: currentTime,
-        freq: noteFreq[item.note],
-        duration: item.duration,
-        type: 'midEastern',
-        gain: 0.12, // Slightly decreased melody gain
-        group: 'melody'
-      });
-      
-      // Enhanced Middle Eastern percussion patterns - STRONGER BEAT
-      // Calculate 16th note positions within this note's time span
-      const startBeat = Math.floor(beatInMeasure * 4) / 4;
-      const noteDurationInBeats = item.duration / quarterNote;
-      const endBeat = startBeat + noteDurationInBeats;
-      
-      // For each 16th note position within this note's timespan
-      for (let b = startBeat * 4; b < endBeat * 4; b++) {
-        const sixteenthNote = b / 4;
-        const sixteenthPosition = sixteenthNote % 4; // Position within measure
-        const sixteenthTime = currentTime + ((sixteenthNote - startBeat) * quarterNote);
-        
-        // Enhanced doumbek/darbuka pattern (stronger Middle Eastern drum)
-        // Classic Middle Eastern rhythm patterns:
-        
-        // Strong Doumbek pattern: Dum, tek, Dum-Dum, tek (Dum = bass, tek = higher tone)
-        if (sixteenthPosition === 0) { // Beat 1: Stronger Dum (deep tone)
-          sequence.push({
-            time: sixteenthTime,
-            freq: 55, // Lower frequency for deeper sound
-            duration: 0.15, // Longer duration for more impact
-            type: 'doumbek',
-            gain: 0.18, // Increased gain for stronger beat
-            group: 'doumDrum'
-          });
-        } else if (sixteenthPosition === 1) { // Beat 2: Tek (higher tone)
-          sequence.push({
-            time: sixteenthTime,
-            freq: 170, // Lowered frequency
-            duration: 0.08,
-            type: 'doumbek',
-            gain: 0.12,
-            group: 'tekDrum'
-          });
-        }
-        
-        // Additional Dum on beat 2.5 for more rhythmic drive
-        if (sixteenthPosition === 2) { // Beat 3: Dum (deep tone)
-          sequence.push({
-            time: sixteenthTime,
-            freq: 58, // Lower frequency for deeper sound
-            duration: 0.12, // Longer for more impact
-            type: 'doumbek',
-            gain: 0.17, // Increased gain
-            group: 'doumDrum'
-          });
-        } else if (sixteenthPosition === 2.5) { // Extra Dum for more beat
-          sequence.push({
-            time: sixteenthTime,
-            freq: 60,
-            duration: 0.1,
-            type: 'doumbek',
-            gain: 0.15,
-            group: 'doumDrum'
-          });
-        }
-        
-        if (sixteenthPosition === 3) { // Beat 4: Tek (higher tone)
-          sequence.push({
-            time: sixteenthTime,
-            freq: 165, // Lowered frequency
-            duration: 0.08,
-            type: 'doumbek',
-            gain: 0.13,
-            group: 'tekDrum'
-          });
-        }
-        
-        // Removed the zills (finger cymbals) which were likely causing the high-pitched noise
-        
-        // Add lower pitched frame drum for additional rhythm
-        if (sixteenthPosition % 0.5 === 0) { // Every 8th note
-          // Only on certain beats for variation
-          if (sixteenthPosition === 0.5 || sixteenthPosition === 1.5 || sixteenthPosition === 3.5) {
-            sequence.push({
-              time: sixteenthTime,
-              freq: 130, // Much lower frequency
-              duration: 0.06,
-              type: 'frameDrum',
-              gain: 0.08, // Moderate gain
-              group: 'frameDrum'
-            });
-          }
-        }
-        
-        // Add a low daf drum (frame drum) hit for a stronger beat
-        if (sixteenthPosition === 0 || sixteenthPosition === 2) { // On main beats
-          sequence.push({
-            time: sixteenthTime,
-            freq: 90, // Low frequency for depth
-            duration: 0.15,
-            type: 'daf',
-            gain: 0.15, // Good presence
-            group: 'daf'
-          });
-        }
+      if (item.note !== 'REST' && noteFreq[item.note]) {
+        sequence.push({
+          time: currentTime,
+          freq: noteFreq[item.note],
+          duration: item.duration * 0.95,
+          type: 'lead',
+          gain: 0.15, // Slightly reduced to balance with the bass
+          group: 'melody'
+        });
       }
       
-      // Update time based on note duration
       currentTime += item.duration;
     });
     
-    // Calculate total duration
-    const totalDuration = currentTime;
+    // Add four-on-the-floor kick drum throughout the ENTIRE track
+    for (let beat = 0; beat < totalBeats; beat++) {
+      // Main kick on every beat (four-on-the-floor)
+      sequence.push({
+        time: beat * quarterNote,
+        freq: 50, // Low frequency for deep kick
+        duration: 0.2,
+        type: 'kick',
+        gain: 0.3, // Strong kick
+        group: 'drums'
+      });
+      
+      // Add off-beat kicks for variety on alternate measures
+      if (beat % 8 >= 4) { // Only in every other measure
+        // Add kick on the "and" of beats 1 and 3
+        if (beat % 4 === 0 || beat % 4 === 2) {
+          sequence.push({
+            time: beat * quarterNote + (quarterNote * 0.5),
+            freq: 45, // Even lower for accent
+            duration: 0.18,
+            type: 'kick',
+            gain: 0.28,
+            group: 'drums'
+          });
+        }
+      }
+    }
+    
+    // Add snares on beats 2 and 4 of every measure throughout the ENTIRE track
+    for (let measure = 0; measure < Math.ceil(totalBeats / 4); measure++) {
+      sequence.push({
+        time: (measure * 4 + 1) * quarterNote, // Beat 2
+        freq: 180,
+        duration: 0.12,
+        type: 'snare',
+        gain: 0.14,
+        group: 'drums'
+      });
+      
+      sequence.push({
+        time: (measure * 4 + 3) * quarterNote, // Beat 4
+        freq: 180,
+        duration: 0.12,
+        type: 'snare',
+        gain: 0.14,
+        group: 'drums'
+      });
+    }
+    
+    // Add hi-hats for rhythm throughout the ENTIRE track
+    for (let eighthBeat = 0; eighthBeat < totalBeats * 2; eighthBeat++) {
+      sequence.push({
+        time: eighthBeat * eighthNote,
+        freq: 8000,
+        duration: 0.08,
+        type: 'hihat',
+        gain: 0.08,
+        group: 'hihat'
+      });
+    }
+    
+    // Calculate total duration based on the actual melody length
+    const totalDuration = melodyDuration;
     
     // Create the buffer
     const sampleRate = this.audioContext.sampleRate;
@@ -522,116 +539,99 @@ class AudioManager {
       const startSample = Math.floor(note.time * sampleRate);
       const endSample = Math.floor((note.time + note.duration) * sampleRate);
       const frequency = note.freq;
-      
-      // Generate the tone for this note
       for (let i = startSample; i < endSample; i++) {
         if (i >= buffer.length) break;
-        
         const t = (i - startSample) / sampleRate;
         let sample = 0;
-        
-        // Different envelope shapes based on instrument type
         let attackTime, releaseTime;
-        
-        if (note.group === 'doumDrum') {
-          attackTime = 0.002; // Faster attack for punchier sound
-          releaseTime = 0.2; // Longer release for more body
-        } else if (note.group === 'tekDrum') {
+        if (note.group === 'drums') {
           attackTime = 0.001;
-          releaseTime = 0.08;
-        } else if (note.group === 'frameDrum' || note.group === 'daf') {
-          attackTime = 0.002;
-          releaseTime = 0.15;
-        } else if (note.group === 'bass' || note.group === 'drone') {
-          attackTime = 0.02;
-          releaseTime = 0.2;
-        } else {
-          // Middle Eastern melody typically has fast attack
-          attackTime = 0.01;
-          releaseTime = 0.1;
-        }
-        
-        let amplitude = note.gain;
-        
-        if (t < attackTime) {
-          amplitude *= (t / attackTime); // Attack
-        } else if (t > note.duration - releaseTime) {
-          amplitude *= (note.duration - t) / releaseTime; // Release
-        }
-        
-        // Middle Eastern instruments and sounds - revised to avoid high pitches
-        if (note.type === 'midEastern') {
-          // Middle Eastern instrument with characteristic vibrato but less high harmonics
-          const vibratoFreq = 5.5; // Slightly slower vibrato
-          const vibrato = 1 + (Math.sin(2 * Math.PI * vibratoFreq * t) * 0.005); // Subtle vibrato
-          
-          // Main tone
-          const mainTone = Math.sin(2 * Math.PI * frequency * t * vibrato);
-          // Lower harmonic content
-          const thirdHarmonic = Math.sin(2 * Math.PI * frequency * 1.5 * t) * 0.15;
-          
-          sample = (mainTone + thirdHarmonic) * amplitude;
-        } else if (note.type === 'drone') {
-          // Drone sound with rich but controlled harmonics
-          const fundamental = Math.sin(2 * Math.PI * frequency * t);
-          const fifth = Math.sin(2 * Math.PI * frequency * 1.5 * t) * 0.3;
-          
-          sample = (fundamental + fifth) * amplitude * 0.7;
-        } else if (note.type === 'triangle') {
-          // Fuller triangle wave for bassline
-          const fundamental = (Math.abs(((t * frequency * 2) % 2) - 1) - 0.5);
-          const subBass = Math.sin(2 * Math.PI * (frequency * 0.5) * t) * 0.15;
-          
-          sample = (fundamental + subBass) * amplitude * 1.2;
-        } else if (note.type === 'doumbek') {
-          // Doumbek/darbuka - Middle Eastern hand drum - enhanced for stronger beat
-          if (note.group === 'doumDrum') {
-            // Deep "Dum" sound with more impact
-            const freqEnvelope = Math.exp(-t * 20); // Slower decay
-            const bodyResonance = Math.sin(2 * Math.PI * (frequency + 30 * freqEnvelope) * t);
-            const clickAttack = Math.sin(2 * Math.PI * 400 * t) * Math.exp(-t * 100) * 0.3; // Lower frequency click
-            
-            sample = (bodyResonance + clickAttack) * amplitude * Math.exp(-t * 10);
-          } else {
-            // "Tek" sound with controlled higher frequencies
-            const mainFreq = Math.sin(2 * Math.PI * frequency * t) * Math.exp(-t * 20);
-            const snap = (Math.random() * 2 - 1) * Math.exp(-t * 50) * 0.4;
-            
-            sample = (mainFreq * 0.6 + snap * 0.4) * amplitude;
-          }
-        } else if (note.type === 'frameDrum' || note.type === 'daf') {
-          // Frame drum sound - deep and resonant
-          const mainFreq = Math.sin(2 * Math.PI * frequency * t) * Math.exp(-t * 12);
-          const bodyResonance = Math.sin(2 * Math.PI * (frequency * 1.2) * t) * Math.exp(-t * 15) * 0.4;
-          const thump = Math.sin(2 * Math.PI * (frequency * 0.8) * t) * Math.exp(-t * 8) * 0.5;
-          
-          sample = (mainFreq + bodyResonance + thump) * amplitude;
-        }
-        
-        // Stereo positioning by instrument type
-        let stereoPan = 0;
-        
-        // Position instruments for a balanced stereo field
-        if (note.group === 'doumDrum') {
-          stereoPan = -0.15; // Centered with slight left bias
-        } else if (note.group === 'tekDrum') {
-          stereoPan = 0.15; // Slight right
-        } else if (note.group === 'frameDrum') {
-          stereoPan = 0.25; // More right
-        } else if (note.group === 'daf') {
-          stereoPan = -0.2; // More left
-        } else if (note.group === 'drone') {
-          stereoPan = 0; // Centered
+          releaseTime = 0.15; // Longer release for drums
+        } else if (note.group === 'hihat') {
+          attackTime = 0.001;
+          releaseTime = 0.05;
         } else if (note.group === 'bass') {
-          stereoPan = -0.1; // Slightly left
-        } else if (note.group === 'melody') {
-          // Melody moves slightly
-          stereoPan = Math.sin(note.time * 0.5) * 0.1; // Subtle movement
+          attackTime = 0.02; // Slower attack for bass
+          releaseTime = 0.15; // Longer release for bass
+        } else if (note.group === 'effects') {
+          attackTime = 0.005;
+          releaseTime = 0.1;
+        } else if (note.group === 'ethnic') {
+          attackTime = 0.002;
+          releaseTime = 0.08;
+        } else {
+          attackTime = 0.01;
+          releaseTime = 0.08;
         }
-        
+        let amplitude = note.gain;
+        if (t < attackTime) {
+          amplitude *= (t / attackTime);
+        } else if (t > note.duration - releaseTime) {
+          amplitude *= (note.duration - t) / releaseTime;
+        }
+        if (note.type === 'lead') {
+          // Use a richer lead sound with subtle vibrato
+          const vibrato = 1 + (Math.sin(2 * Math.PI * 3 * t) * 0.002); // Reduced vibrato
+          const saw = 2 * (((t * frequency * vibrato) % 1) - 0.5);
+          const square = Math.sin(2 * Math.PI * frequency * vibrato * t) > 0 ? 0.5 : -0.5;
+          // Mix saw and square waves for a richer tone
+          sample = (saw * 0.7 + square * 0.3) * amplitude;
+        } else if (note.type === 'synth') {
+          // Use a richer bass sound
+          const fundamental = 2 * (((t * frequency) % 1) - 0.5); // Sawtooth
+          const subOctave = Math.sin(2 * Math.PI * (frequency/2) * t) * 0.3; // Add sub-octave
+          sample = (fundamental * 0.7 + subOctave) * amplitude;
+        } else if (note.type === 'kick') {
+          // Enhanced kick with deeper sub and punch
+          const kickFreq = frequency * (1 + 8 * Math.exp(-t * 15)); // Sharper pitch drop
+          const body = Math.sin(2 * Math.PI * kickFreq * t);
+          
+          // Sub-bass component for extra depth
+          const sub = Math.sin(2 * Math.PI * (frequency * 0.5) * t) * 0.5;
+          
+          // Click/attack component
+          const click = Math.sin(2 * Math.PI * 1500 * t) * Math.exp(-t * 50) * 0.5;
+          
+          // Compression effect (simple simulation)
+          let combined = (body * 0.7 + sub * 0.2 + click * 0.1) * amplitude;
+          
+          // Simple soft clipping for more punch
+          if (combined > 0.8) {
+            combined = 0.8 + (combined - 0.8) * 0.5;
+          } else if (combined < -0.8) {
+            combined = -0.8 + (combined + 0.8) * 0.5;
+          }
+          
+          sample = combined;
+        } else if (note.type === 'snare') {
+          const noiseLevel = (Math.random() * 2 - 1) * Math.exp(-t * 10) * 0.7;
+          const tone = Math.sin(2 * Math.PI * frequency * t) * Math.exp(-t * 12) * 0.3;
+          sample = (noiseLevel + tone) * amplitude;
+        } else if (note.type === 'hihat') {
+          const noise = (Math.random() * 2 - 1);
+          const envelope = Math.exp(-t * 40);
+          sample = noise * envelope * amplitude;
+        } else if (note.type === 'doumbek') {
+          const bodyFreq = Math.sin(2 * Math.PI * frequency * t) * Math.exp(-t * 12);
+          sample = bodyFreq * amplitude;
+        } else if (note.type === 'tetrisDrop') {
+          const drop = Math.sin(2 * Math.PI * (frequency - t * 80) * t);
+          sample = drop * amplitude;
+        }
+        let stereoPan = 0;
+        if (note.group === 'drums') {
+          stereoPan = note.type === 'kick' ? 0 : -0.1;
+        } else if (note.group === 'hihat') {
+          stereoPan = 0.2;
+        } else if (note.group === 'melody') {
+          stereoPan = 0.1;
+        } else if (note.group === 'ethnic') {
+          stereoPan = -0.2;
+        } else if (note.group === 'bass') {
+          stereoPan = -0.05; // Slight pan for bass
+        }
         const leftGain = Math.min(1, 1 - stereoPan);
         const rightGain = Math.min(1, 1 + stereoPan);
-        
         leftChannel[i] += sample * leftGain;
         rightChannel[i] += sample * rightGain;
       }
@@ -640,7 +640,7 @@ class AudioManager {
     // Normalize the buffer to prevent clipping
     const normalize = (channel) => {
       const max = channel.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
-      if (max > 0.7) { // Lower target for clearer mix
+      if (max > 0.7) {
         const gain = 0.7 / max;
         for (let i = 0; i < channel.length; i++) {
           channel[i] *= gain;
@@ -711,7 +711,18 @@ class AudioManager {
     if (effectsEnabled && this.delayNode) {
       // Create a gain node for this specific sound
       const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = 0.9; // Higher direct signal
+      
+      // Set different gain values based on the sound type
+      if (soundName === 'lineClear') {
+        // Increased volume for line clear/rattlesnake sound
+        gainNode.gain.value = 1.5; // Significantly louder than other sounds
+      } else if (soundName === 'eat') {
+        gainNode.gain.value = 0.6; // Lower volume for food sound
+      } else if (soundName === 'gameOver') {
+        gainNode.gain.value = 1.0; // Normal volume for game over
+      } else {
+        gainNode.gain.value = 0.9; // Default for other sounds
+      }
       
       // Create a gain node for effect send - less effect for clarity
       const effectSend = this.audioContext.createGain();
@@ -722,13 +733,6 @@ class AudioManager {
                           soundName === 'eat' ? 0.03 : // Reduced effect for food sound
                           0.05;
       effectSend.gain.value = effectAmount;
-      
-      // Adjust volume for specific sounds
-      if (soundName === 'eat') {
-        gainNode.gain.value = 0.6; // Lower volume for food sound
-      } else if (soundName === 'lineClear') {
-        gainNode.gain.value = 1.0; // Higher volume for line clear
-      }
       
       // Connect main path
       source.connect(gainNode);
@@ -750,64 +754,107 @@ class AudioManager {
     source.start(0);
   }
 
-  startBackgroundMusic(track = 'main') {
-    if (this.isMusicMuted || !this.audioContext || !this.sounds.bgMusic || this.bgMusicPlaying) return;
+  startBackgroundMusic(level = 1) {
+    if (this.isMusicMuted || !this.audioContext) {
+      return;
+    }
     
+    try {
+      // Normalize level parameter - handle both string and numeric values
+      let normalizedLevel = 1;
+      
+      if (typeof level === 'string') {
+        switch (level) {
+          case 'intense':
+            normalizedLevel = 5; // Map 'intense' to level 5
+            break;
+          case 'main':
+          default:
+            normalizedLevel = 1;
+            break;
+        }
+      } else if (typeof level === 'number') {
+        normalizedLevel = Math.max(1, Math.min(10, level)); // Cap between 1-10
+      }
+      
+      // If music is already playing, stop it first to avoid overlapping sounds
+      if (this.bgMusicPlaying && this.bgMusicSource) {
+        this.stopBackgroundMusic();
+        // Small delay to ensure clean transition
+        setTimeout(() => this._initializeBackgroundMusic(normalizedLevel), 50);
+        return;
+      }
+      
+      this._initializeBackgroundMusic(normalizedLevel);
+    } catch (error) {
+      console.error('Error starting background music:', error);
+      // Reset state for next attempt
+      this.bgMusicPlaying = false;
+      this.bgMusicSource = null;
+    }
+  }
+  
+  /**
+   * Internal method to initialize and start the background music
+   * @private
+   */
+  _initializeBackgroundMusic(level) {
     // Resume audio context if needed
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
     
-    // Use the requested track
-    this.musicTrack = track;
+    // Store current level
+    this.currentMusicLevel = level;
     
-    // Select the appropriate music track
-    const musicBuffer = track === 'intense' ? 
-                       this.sounds.bgMusicIntense : 
-                       this.sounds.bgMusicMain;
+    // Select the music buffer 
+    const musicBuffer = this.sounds.bgMusic;
     
-    if (!musicBuffer) return;
+    if (!musicBuffer) {
+      console.error('Music buffer not found');
+      return;
+    }
     
     // Create a gain node for volume control
     this.bgMusicGain = this.audioContext.createGain();
-    this.bgMusicGain.gain.value = 0.4; // Slightly lower for better balance
+    this.bgMusicGain.gain.value = 0.45; 
     
     // Add EQ for better clarity
     try {
-      // Create EQ nodes for clearer sound
+      // Create EQ nodes for a cleaner, brighter sound
       const lowCut = this.audioContext.createBiquadFilter();
       lowCut.type = 'highpass';
-      lowCut.frequency.value = 120; // Cut rumble
-      
+      lowCut.frequency.value = 60; // Lower for more bass punch
+
       const bassBoost = this.audioContext.createBiquadFilter();
       bassBoost.type = 'lowshelf';
-      bassBoost.frequency.value = 250;
-      bassBoost.gain.value = 2; // Less extreme boost
+      bassBoost.frequency.value = 120;
+      bassBoost.gain.value = 4; // More bass for club feel
       
-      const midScoop = this.audioContext.createBiquadFilter();
-      midScoop.type = 'peaking';
-      midScoop.frequency.value = 500; // Lower for mud removal
-      midScoop.Q.value = 1;
-      midScoop.gain.value = -3; // Deeper cut to remove mud
+      const lowMidScoop = this.audioContext.createBiquadFilter();
+      lowMidScoop.type = 'peaking';
+      lowMidScoop.frequency.value = 300;
+      lowMidScoop.Q.value = 1;
+      lowMidScoop.gain.value = -2; // Clean up mud
       
       const presenceBoost = this.audioContext.createBiquadFilter();
       presenceBoost.type = 'peaking';
-      presenceBoost.frequency.value = 2000;
+      presenceBoost.frequency.value = 3000;
       presenceBoost.Q.value = 0.8;
-      presenceBoost.gain.value = 2;
+      presenceBoost.gain.value = 3; // More brightness and clarity
       
-      const highBoost = this.audioContext.createBiquadFilter();
-      highBoost.type = 'highshelf';
-      highBoost.frequency.value = 4000;
-      highBoost.gain.value = 3;
+      const highShelf = this.audioContext.createBiquadFilter();
+      highShelf.type = 'highshelf';
+      highShelf.frequency.value = 8000;
+      highShelf.gain.value = 2; // Add air and sparkle
       
       // Connect the EQ chain
       this.bgMusicGain.connect(lowCut);
       lowCut.connect(bassBoost);
-      bassBoost.connect(midScoop);
-      midScoop.connect(presenceBoost);
-      presenceBoost.connect(highBoost);
-      highBoost.connect(this.audioContext.destination);
+      bassBoost.connect(lowMidScoop);
+      lowMidScoop.connect(presenceBoost);
+      presenceBoost.connect(highShelf);
+      highShelf.connect(this.audioContext.destination);
     } catch (e) {
       // Fallback to direct connection if EQ fails
       console.log('EQ not supported, using direct connection');
@@ -818,11 +865,17 @@ class AudioManager {
     this.bgMusicSource = this.audioContext.createBufferSource();
     this.bgMusicSource.buffer = musicBuffer;
     this.bgMusicSource.loop = true;
+    
+    // Always use a consistent playback rate of 1 to maintain constant pitch
+    // Regardless of level, keep the music at normal speed
+    this.bgMusicSource.playbackRate.value = 1;
+    console.log('Music initialized with constant pitch (playbackRate = 1)');
+    
     this.bgMusicSource.connect(this.bgMusicGain);
     
     // Start playback with a short fade-in
     this.bgMusicGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-    this.bgMusicGain.gain.linearRampToValueAtTime(0.4, this.audioContext.currentTime + 0.5);
+    this.bgMusicGain.gain.linearRampToValueAtTime(0.45, this.audioContext.currentTime + 0.5);
     
     this.bgMusicSource.start(0);
     this.bgMusicPlaying = true;
@@ -830,50 +883,80 @@ class AudioManager {
     
     // When music stops (should only happen if explicitly stopped)
     this.bgMusicSource.onended = () => {
-      this.bgMusicPlaying = false;
-      this.bgMusicSource = null;
+      // Check if this was an unexpected end (not caused by stopBackgroundMusic)
+      // If bgMusicPlaying is still true, it means we didn't intend to stop
+      if (this.bgMusicPlaying && !this.isMusicMuted && !this.bgMusicPaused) {
+        console.log('Background music ended unexpectedly, restarting...');
+        // Create a slight delay before restarting to prevent audio glitches
+        setTimeout(() => {
+          this.startBackgroundMusic(this.currentMusicLevel || 1);
+        }, 100);
+      } else {
+        this.bgMusicPlaying = false;
+        this.bgMusicSource = null;
+      }
     };
   }
 
-  // Change the music track while playing
-  changeBackgroundMusic(track) {
-    if (track === this.musicTrack) return; // Already playing this track
+  changeBackgroundMusic(level) {
+    // Don't adjust the music speed/pitch based on level anymore
+    // This ensures the music plays at a constant pitch
     
-    // Stop current music
-    if (this.bgMusicPlaying) {
-      this.stopBackgroundMusic();
+    // If music needs to be changed from one track to another (not just speed),
+    // check the level to determine which track to play
+    if (this.bgMusicPlaying && this.bgMusicSource) {
+      try {
+        // Just store the current level without changing playback rate
+        this.currentMusicLevel = typeof level === 'number' ? level : 1;
+        
+        console.log(`Music track level: ${this.currentMusicLevel} (maintaining constant pitch)`);
+      } catch (error) {
+        console.error('Error changing music:', error);
+      }
+    } else {
+      // If not playing, start the music without speed changes
+      this.startBackgroundMusic('main'); // Always use main track with constant pitch
     }
-    
-    // Start the new track
-    this.startBackgroundMusic(track);
   }
 
   stopBackgroundMusic() {
-    if (this.bgMusicSource) {
-      try {
-        // Fade out gracefully
-        if (this.bgMusicGain && this.audioContext) {
-          const currentTime = this.audioContext.currentTime;
-          this.bgMusicGain.gain.setValueAtTime(this.bgMusicGain.gain.value, currentTime);
-          this.bgMusicGain.gain.linearRampToValueAtTime(0, currentTime + 0.5);
-          
-          // Stop the source after the fade
-          setTimeout(() => {
+    if (!this.bgMusicSource) {
+      // Music is already stopped or never started
+      this.bgMusicPlaying = false;
+      return;
+    }
+    
+    try {
+      // Fade out gracefully if context is available and not suspended
+      if (this.bgMusicGain && this.audioContext && this.audioContext.state === 'running') {
+        const currentTime = this.audioContext.currentTime;
+        this.bgMusicGain.gain.setValueAtTime(this.bgMusicGain.gain.value, currentTime);
+        this.bgMusicGain.gain.linearRampToValueAtTime(0, currentTime + 0.5);
+        
+        // Stop the source after the fade
+        setTimeout(() => {
+          try {
             if (this.bgMusicSource) {
               this.bgMusicSource.stop();
               this.bgMusicSource = null;
             }
-          }, 500);
-        } else {
-          this.bgMusicSource.stop();
-          this.bgMusicSource = null;
-        }
-      } catch (e) {
-        console.log('Error stopping music:', e);
+          } catch (innerError) {
+            console.warn('Error stopping music after fade:', innerError);
+            this.bgMusicSource = null;
+          }
+        }, 500);
+      } else {
+        // Immediate stop if no fade possible
+        this.bgMusicSource.stop();
+        this.bgMusicSource = null;
       }
-      
-      this.bgMusicPlaying = false;
+    } catch (e) {
+      console.warn('Error stopping background music:', e);
+      // Still clean up the references so we can restart if needed
+      this.bgMusicSource = null;
     }
+    
+    this.bgMusicPlaying = false;
   }
 
   pauseBackgroundMusic() {
@@ -885,8 +968,24 @@ class AudioManager {
 
   resumeBackgroundMusic() {
     if (this.bgMusicPaused) {
-      this.startBackgroundMusic(this.musicTrack);
       this.bgMusicPaused = false;
+      
+      // Resume audio context if it was suspended
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+      
+      // Check if we still have a valid source and context
+      if (this.audioContext && this.bgMusicSource && this.audioContext.state === 'running') {
+        // Fade back in
+        if (this.bgMusicGain) {
+          this.bgMusicGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+          this.bgMusicGain.gain.linearRampToValueAtTime(0.45, this.audioContext.currentTime + 0.5);
+        }
+      } else {
+        // Restart if needed
+        this.startBackgroundMusic(this.currentMusicLevel || 1);
+      }
     }
   }
 
@@ -903,7 +1002,7 @@ class AudioManager {
     if (this.isMusicMuted) {
       this.stopBackgroundMusic();
     } else if (!this.bgMusicPaused) {
-      this.startBackgroundMusic(this.musicTrack);
+      this.startBackgroundMusic(this.currentMusicLevel || 1);
     }
     
     return this.isMusicMuted;
@@ -922,7 +1021,7 @@ class AudioManager {
       if (this.isMusicMuted) {
         this.stopBackgroundMusic();
       } else if (!this.bgMusicPaused) {
-        this.startBackgroundMusic(this.musicTrack);
+        this.startBackgroundMusic(this.currentMusicLevel || 1);
       }
     }
   }

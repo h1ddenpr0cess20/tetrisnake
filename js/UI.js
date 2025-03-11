@@ -18,6 +18,8 @@ class UI {
       finalLevel: document.getElementById(elementIds.finalLevel),
       startButton: document.getElementById(elementIds.startButton),
       restartButton: document.getElementById(elementIds.restartButton),
+      resumeButton: document.getElementById('resumeButton'),
+      quitButton: document.getElementById('quitButton'),
       toggleSound: document.getElementById('toggleSound'),
       toggleSoundPaused: document.getElementById('toggleSoundPaused'),
       toggleMusic: document.getElementById('toggleMusic'),
@@ -115,6 +117,26 @@ class UI {
    */
   onRestartGame(callback) {
     this.elements.restartButton.addEventListener("click", callback);
+  }
+
+  /**
+   * Binds the resume game button click event
+   * @param {Function} callback - Function to call when resume button is clicked
+   */
+  onResumeGame(callback) {
+    if (this.elements.resumeButton) {
+      this.elements.resumeButton.addEventListener("click", callback);
+    }
+  }
+
+  /**
+   * Binds the quit to menu button click event
+   * @param {Function} callback - Function to call when quit button is clicked
+   */
+  onQuitToMenu(callback) {
+    if (this.elements.quitButton) {
+      this.elements.quitButton.addEventListener("click", callback);
+    }
   }
 
   /**

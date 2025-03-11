@@ -64,16 +64,26 @@ class Game {
       }
     });
     
+    // Pause menu resume button handler
+    this.ui.onResumeGame(() => {
+      this.paused = false;
+      this.ui.togglePauseMenu(false);
+      this.audioManager.resumeBackgroundMusic();
+    });
+    
+    // Pause menu quit button handler
+    this.ui.onQuitToMenu(() => {
+      this.quitToMainMenu();
+    });
+    
     // Audio controls
     this.ui.onSoundToggle(() => {
       const isMuted = this.audioManager.toggleMute();
-      console.log('Game: Sound toggle, muted =', isMuted);
       return isMuted;
     });
     
     this.ui.onMusicToggle(() => {
       const isMuted = this.audioManager.toggleMusic();
-      console.log('Game: Music toggle, muted =', isMuted);
       return isMuted;
     });
   }
@@ -175,6 +185,8 @@ class Game {
    */
   updateGame(delta) {
     this.accumulator += delta;
+    
+    // Calculate the snake's movement delay based on current level and length
     const delay = this.snake.computeDelay(this.level);
     
     // Time-based movement system
@@ -224,9 +236,19 @@ class Game {
   }
 
   /**
-   * Processes snake collision with obstacles
+   * Handles collision between snake and grid/blocks
    */
   handleCollision() {
+    // Play impact sound
+    this.audioManager.play('collision');
+    
+    // Add a brief screen shake effect
+    const gameContainer = document.getElementById('gameContainer');
+    gameContainer.classList.add('shake');
+    setTimeout(() => {
+      gameContainer.classList.remove('shake');
+    }, 300);
+    
     // Convert snake to static blocks
     this.grid.lockSnake(this.snake);
     
@@ -238,12 +260,14 @@ class Game {
       this.score += linesCleared * 50 * this.level;
     }
     
-    // Update level based on blocks placed
-    this.level = 1 + Math.floor(this.grid.landedBlocks / 50);
+    // Update level based on blocks placed - make it less frequent to prevent bugs
+    // Changed from 50 to 80 blocks per level to slow down progression
+    this.level = 1 + Math.floor(this.grid.landedBlocks / 80);
     
-    // Intensify music at higher levels
+    // Intensify music at higher levels - pass the numeric level instead of 'intense'
     if (this.level >= 5 && !this.audioManager.isMusicMuted) {
-      this.audioManager.changeBackgroundMusic('intense');
+      // Pass the actual level number instead of a string
+      this.audioManager.changeBackgroundMusic(this.level);
     }
     
     // Spawn new snake
@@ -261,6 +285,22 @@ class Game {
   handleFoodEaten() {
     this.audioManager.play('eat');
     this.score += this.level * 10;
+    
+    // Update music speed based on snake length to match gameplay speed
+    // Only update if music isn't muted
+    if (!this.audioManager.isMusicMuted && this.snake.body.length > 1) {
+      // Calculate effective speed level from snake length
+      // Use snake length directly in a formula that smoothly increases with length
+      // Every ~8 segments = +1 music level
+      const lengthSpeedLevel = 1 + (this.snake.body.length / 8);
+      
+      // Use the higher of game level or length-based level
+      const effectiveLevel = Math.max(this.level, lengthSpeedLevel);
+      
+      // Update the music speed gradually
+      this.audioManager.changeBackgroundMusic(effectiveLevel);
+    }
+    
     this.grid.spawnFood(this.snake);
   }
 

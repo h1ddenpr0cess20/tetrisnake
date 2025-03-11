@@ -115,19 +115,34 @@ class Snake {
   computeDelay(level) {
     // Adjust base speed based on level and snake length
     const extraSegments = this.body.length - 1;
+    
+    // Calculate level-based speed reduction
+    const levelSpeedReduction = Math.min(level - 1, 9) * 20; // Increased level impact
+    
+    // VERY dramatic per-segment effect - 20ms per segment
+    // At 10 segments, this would reduce delay by 200ms!
+    const lengthSpeedReduction = extraSegments * 20;
+    
+    // Ensure a reasonable minimum speed (not too fast)
     const baseDelay = Math.max(
-      config.SPEEDS.FAST_MOVE_DELAY,
-      config.SPEEDS.MOVE_DELAY - (level - 1) * 18 - extraSegments * 15
+      60, // Slightly lower minimum delay
+      config.SPEEDS.MOVE_DELAY - levelSpeedReduction - lengthSpeedReduction
     );
     
     // Apply acceleration when holding down a direction key
+    let finalDelay = baseDelay;
     if (this.activeDirectionKey && this.keyHoldStart) {
       const holdTime = performance.now() - this.keyHoldStart;
       const factor = Math.min(holdTime / config.SPEEDS.HOLD_SCALE, 1);
-      return baseDelay - (baseDelay - config.SPEEDS.FAST_MOVE_DELAY) * factor;
+      
+      // Calculate accelerated speed with a reasonable minimum
+      finalDelay = Math.max(
+        40, // Allow even faster speed with key held
+        baseDelay - (baseDelay - config.SPEEDS.FAST_MOVE_DELAY) * factor
+      );
     }
     
-    return baseDelay;
+    return finalDelay;
   }
 
   /**
