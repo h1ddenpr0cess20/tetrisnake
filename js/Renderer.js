@@ -74,16 +74,43 @@ class Renderer {
     return (usePound ? "#" : "") + 
            ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
   }
-
   /**
    * Resizes the canvas based on window dimensions
    * Adjusts cell size for responsive layout
    */
   resizeCanvas() {
-    const scale = window.innerWidth < 600 ? 20 : config.CELL_SIZE;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                     ('ontouchstart' in window) ||
+                     (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    
+    let scale;
+    
+    if (isMobile) {
+      // Mobile-optimized scaling
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+      const availableHeight = screenHeight - 160; // Account for mobile controls
+      
+      // Calculate optimal scale based on screen dimensions
+      const scaleByWidth = Math.floor(screenWidth / config.GRID_WIDTH);
+      const scaleByHeight = Math.floor(availableHeight / (config.GRID_HEIGHT + config.HUD_HEIGHT / config.CELL_SIZE));
+      scale = Math.max(12, Math.min(scaleByWidth, scaleByHeight));
+    } else {
+      // Desktop scaling
+      scale = window.innerWidth < 600 ? 20 : config.CELL_SIZE;
+    }
+    
     this.canvas.width = scale * config.GRID_WIDTH;
     this.canvas.height = scale * config.GRID_HEIGHT + config.HUD_HEIGHT;
     this.cellSize = scale;
+    
+    // Apply CSS to ensure proper display on mobile
+    if (isMobile) {
+      this.canvas.style.width = '100%';
+      this.canvas.style.height = 'auto';
+      this.canvas.style.maxWidth = '100vw';
+      this.canvas.style.maxHeight = 'calc(100vh - 160px)';
+    }
     
     // Recreate patterns on resize
     this.createPatterns();

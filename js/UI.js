@@ -23,7 +23,8 @@ class UI {
       toggleSound: document.getElementById('toggleSound'),
       toggleSoundPaused: document.getElementById('toggleSoundPaused'),
       toggleMusic: document.getElementById('toggleMusic'),
-      toggleMusicPaused: document.getElementById('toggleMusicPaused')
+      toggleMusicPaused: document.getElementById('toggleMusicPaused'),
+      mobileControls: document.getElementById('mobileControls')
     };
     
     // Initial audio settings
@@ -31,6 +32,51 @@ class UI {
     this.musicEnabled = true;
     this.soundToggleCallback = null;
     this.musicToggleCallback = null;
+    this.isMobile = this.detectMobile();
+    
+    // Initialize mobile controls visibility
+    this.updateMobileControlsVisibility();
+  }
+
+  /**
+   * Detects if the device is mobile
+   * @returns {boolean} True if mobile device
+   */
+  detectMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           ('ontouchstart' in window) ||
+           (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  }
+
+  /**
+   * Updates mobile controls visibility based on device type and game state
+   */
+  updateMobileControlsVisibility() {
+    if (this.elements.mobileControls) {
+      if (this.isMobile) {
+        this.elements.mobileControls.style.display = 'block';
+      } else {
+        this.elements.mobileControls.style.display = 'none';
+      }
+    }
+  }
+
+  /**
+   * Shows mobile controls during gameplay
+   */
+  showMobileControls() {
+    if (this.elements.mobileControls && this.isMobile) {
+      this.elements.mobileControls.style.display = 'block';
+    }
+  }
+
+  /**
+   * Hides mobile controls during menus
+   */
+  hideMobileControls() {
+    if (this.elements.mobileControls) {
+      this.elements.mobileControls.style.display = 'none';
+    }
   }
 
   /**
@@ -39,6 +85,7 @@ class UI {
   showMainMenu() {
     this.hideAll();
     this.elements.mainMenu.classList.remove("hidden");
+    this.hideMobileControls();
   }
 
   /**
@@ -53,6 +100,7 @@ class UI {
    */
   showPauseMenu() {
     this.elements.paused.classList.remove("hidden");
+    this.hideMobileControls();
   }
 
   /**
@@ -73,6 +121,9 @@ class UI {
     if (isPaused) {
       this.updateSoundButtonText();
       this.updateMusicButtonText();
+      this.hideMobileControls();
+    } else {
+      this.showMobileControls();
     }
   }
 
@@ -85,6 +136,7 @@ class UI {
     this.elements.finalScore.textContent = `Final Score: ${score}`;
     this.elements.finalLevel.textContent = `Level Reached: ${level}`;
     this.elements.gameOver.classList.remove("hidden");
+    this.hideMobileControls();
   }
 
   /**
@@ -218,4 +270,4 @@ class UI {
       this.elements.toggleMusicPaused.textContent = `Music: ${status}`;
     }
   }
-} 
+}

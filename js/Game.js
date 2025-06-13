@@ -23,15 +23,14 @@ class Game {
       finalLevel: "finalLevel",
       startButton: "startButton",
       restartButton: "restartButton"
-    });
-
-    // Game state variables
+    });    // Game state variables
     this.score = 0;
     this.level = 1;
     this.gameOver = false;
     this.paused = false;
     this.lastMoveTime = 0;
     this.accumulator = 0;
+    this.gameLoopId = null; // Track the animation frame ID
     
     this.bindEvents();
     
@@ -46,22 +45,18 @@ class Game {
   bindEvents() {
     // Handle window resize
     window.addEventListener("resize", () => this.renderer.resizeCanvas());
-    
-    // Game start handler
+      // Game start handler
     this.ui.onStartGame(() => {
       this.ui.hideMainMenu();
+      this.ui.showMobileControls();
       this.start();
     });
-    
-    // Game restart handler
+      // Game restart handler
     this.ui.onRestartGame(() => {
       this.ui.hideGameOver();
-      this.reset();
-      
-      // Resume music if not muted
-      if (!this.audioManager.isMusicMuted) {
-        this.audioManager.startBackgroundMusic('main');
-      }
+      this.ui.showMobileControls();
+      this.stopGameLoop(); // Stop the existing game loop
+      this.start(); // Start fresh
     });
     
     // Pause menu resume button handler
@@ -87,15 +82,25 @@ class Game {
       return isMuted;
     });
   }
-
   /**
    * Starts a new game session
    */
   start() {
+    this.stopGameLoop(); // Ensure any existing loop is stopped
     this.reset();
     this.lastMoveTime = performance.now();
     this.audioManager.startBackgroundMusic();
     this.gameLoop(this.lastMoveTime);
+  }
+
+  /**
+   * Stops the current game loop
+   */
+  stopGameLoop() {
+    if (this.gameLoopId) {
+      cancelAnimationFrame(this.gameLoopId);
+      this.gameLoopId = null;
+    }
   }
 
   /**
@@ -113,7 +118,6 @@ class Game {
     // Clear the canvas to prevent any remnants of the previous game
     this.renderer.clear();
   }
-
   /**
    * Main game loop, runs every animation frame
    * @param {number} timestamp - Current time from requestAnimationFrame
@@ -134,7 +138,8 @@ class Game {
       this.renderer.render(this.snake, this.grid, this.score, this.level);
     }
     
-    requestAnimationFrame(timestamp => this.gameLoop(timestamp));
+    // Store the animation frame ID and continue the loop
+    this.gameLoopId = requestAnimationFrame(timestamp => this.gameLoop(timestamp));
   }
 
   /**
@@ -313,11 +318,11 @@ class Game {
     this.audioManager.stopBackgroundMusic();
     this.ui.showGameOver(this.score, this.level);
   }
-
   /**
    * Exits to main menu from the game
    */
   quitToMainMenu() {
+    this.stopGameLoop(); // Stop the game loop when quitting to menu
     this.paused = false;
     this.gameOver = false;
     this.ui.hideAll();

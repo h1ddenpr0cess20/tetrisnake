@@ -14,9 +14,17 @@ Tetrisnake combines elements from both classic games:
 ## How to Play
 
 ### Controls
-- **Arrow Keys**: Move the snake left, right, up or down (holding any arrow key accelerates movement)
+- **Desktop**: Use arrow keys to move the snake left, right, up or down (holding any arrow key accelerates movement)
+- **Mobile**: Use the virtual control buttons or swipe gestures on the game canvas
 - **P**: Pause the game
 - **Q**: When paused, quit to main menu
+
+### Mobile Features
+- Touch-responsive virtual controls for mobile devices
+- Swipe gestures on the game canvas for direction changes
+- Optimized scaling and layout for different screen sizes
+- Haptic feedback (vibration) when available
+- Auto-detection of mobile devices with appropriate UI adjustments
 
 ### Gameplay
 1. The snake descends automatically like a Tetris piece

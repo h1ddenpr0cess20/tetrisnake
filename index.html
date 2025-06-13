@@ -2,12 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="description" content="Play Tetrisnake - a unique blend of Tetris and Snake!">
   <title>Tetrisnake</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/styles.css">
   <!-- 
     Note: The green snake color is enforced through:
@@ -18,9 +16,8 @@
 </head>
 <body>
   <div id="gameContainer" role="main">
-    <div id="mainMenu" class="overlay" aria-label="Main Menu">
-      <h1>Tetrisnake</h1>
-      <p>Control the falling snake with arrow keys.</p>
+    <div id="mainMenu" class="overlay" aria-label="Main Menu">      <h1>Tetrisnake</h1>
+      <p>Control the falling snake with arrow keys or touch controls.</p>
       <p>Eat food to grow and clear lines like Tetris.</p>
       <p>Avoid walls, blocks, and yourself!</p>
       <button id="startButton">Start Game</button>
@@ -48,6 +45,21 @@
       <button id="restartButton">Restart Game</button>
     </div>
     <canvas id="gameCanvas" aria-label="Tetrisnake Game Canvas"></canvas>
+    
+    <!-- Mobile Controls -->
+    <div id="mobileControls" class="mobile-controls">
+      <div class="control-row">
+        <button id="upBtn" class="control-btn up-btn" aria-label="Move Up">↑</button>
+      </div>
+      <div class="control-row">
+        <button id="leftBtn" class="control-btn left-btn" aria-label="Move Left">←</button>
+        <button id="pauseBtn" class="control-btn pause-btn" aria-label="Pause">⏸</button>
+        <button id="rightBtn" class="control-btn right-btn" aria-label="Move Right">→</button>
+      </div>
+      <div class="control-row">
+        <button id="downBtn" class="control-btn down-btn" aria-label="Move Down">↓</button>
+      </div>
+    </div>
   </div>
 
   <!-- Scripts loaded in dependency order:
@@ -65,4 +77,4 @@
   <script src="js/Game.js"></script>
   <script src="js/main.js"></script>
 </body>
-</html> 
+</html>
